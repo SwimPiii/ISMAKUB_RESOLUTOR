@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IsmaKub</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>IsmaKub</h1>
+    <div class="actions">
+      <button id="btn-clear-all" class="ghost">Limpiar todo</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <h2>Mesa</h2>
+      <div id="board" class="grid board" aria-label="Tablero"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Mano</h2>
+      <div id="hand" class="grid hand" aria-label="Mano del jugador"></div>
+    </section>
+
+    <section class="panel">
+      <div class="actions" style="gap:8px; flex-wrap: wrap;">
+        <button id="btn-solve" class="primary">Calcular</button>
+        <button id="btn-save-pos" class="ghost">Guardar posición</button>
+        <button id="btn-load-pos" class="ghost">Cargar posición</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Selector flotante de fichas -->
+  <div id="picker" class="picker" hidden>
+    <div class="picker-header">
+      <strong>Elige ficha</strong>
+      <button id="picker-close" class="icon" aria-label="Cerrar">×</button>
+    </div>
+    <div class="picker-body" id="picker-body">
+      <!-- Se rellena dinámicamente -->
+    </div>
+    <div class="picker-footer">
+      <button id="btn-clear-cell" class="ghost">Vaciar hueco</button>
+    </div>
+  </div>
+
+  <footer class="footer"></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
