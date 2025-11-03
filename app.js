@@ -12,9 +12,10 @@ const NUMBERS = Array.from({ length: 13 }, (_, i) => i + 1);
 const JOKERS = [{ key: 'joker1', label: 'Comodín 1' }, { key: 'joker2', label: 'Comodín 2' }];
 
 // Estado del tablero y de la mano
-const BOARD_ROWS = 8;
-const BOARD_COLS = 14;
-const HAND_SLOTS = 14;
+// Ajuste solicitado para móviles: tablero 12x10 y mano 12x2 (24 huecos)
+const BOARD_ROWS = 10;
+const BOARD_COLS = 12;
+const HAND_SLOTS = 24;
 
 let boardState = Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(null));
 let handState = Array(HAND_SLOTS).fill(null);

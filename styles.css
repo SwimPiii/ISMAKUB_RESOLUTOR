@@ -34,8 +34,8 @@ button.icon { background: #eee; border: none; width: 28px; height: 28px; border-
 
 /* Grids */
 .grid { display: grid; gap: var(--gap); }
-.board { grid-template-columns: repeat(14, var(--cell)); grid-auto-rows: var(--cell-h); padding: 10px; background: radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1px); background-size: 16px 16px; border-radius: 10px; }
-.hand { grid-template-columns: repeat(14, var(--cell)); grid-auto-rows: var(--hand-cell); padding: 10px; background: radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1px); background-size: 16px 16px; border-radius: 10px; }
+.board { grid-template-columns: repeat(12, var(--cell)); grid-auto-rows: var(--cell-h); padding: 10px; background: radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1px); background-size: 16px 16px; border-radius: 10px; }
+.hand { grid-template-columns: repeat(12, var(--cell)); grid-auto-rows: var(--hand-cell); padding: 10px; background: radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1px); background-size: 16px 16px; border-radius: 10px; }
 
 .cell { display: flex; align-items: center; justify-content: center; border: 2px dotted #cfd8dc; border-radius: 10px; background: rgba(255,255,255,.7); position: relative; user-select: none; }
 .cell:hover { outline: 2px solid #90caf9; }
