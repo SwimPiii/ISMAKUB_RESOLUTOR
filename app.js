@@ -31,6 +31,9 @@ const solveBtn = document.getElementById('btn-solve');
 const saveBtn = document.getElementById('btn-save-pos');
 const loadBtn = document.getElementById('btn-load-pos');
 const btnClearAll = document.getElementById('btn-clear-all');
+const chkUseHandJokers = document.getElementById('chk-use-hand-jokers');
+const inputTimeLimit = document.getElementById('input-time-limit');
+const msgResult = document.getElementById('msg-result');
 
 // Contexto del picker: dónde vamos a escribir la ficha seleccionada
 let pickerContext = { where: 'board', r: 0, c: 0, idx: 0 };
@@ -163,12 +166,24 @@ function selectTile(tile) {
   if (pickerContext.where === 'board') {
     const { r, c } = pickerContext;
     boardState[r][c] = normalizeTile(tile);
+    // Avanzar a la siguiente celda (izq a derecha, arriba a abajo)
+    let nextC = c + 1;
+    let nextR = r;
+    if (nextC >= BOARD_COLS) { nextC = 0; nextR++; }
+    if (nextR < BOARD_ROWS) {
+      pickerContext = { where: 'board', r: nextR, c: nextC };
+    }
   } else {
     const { idx } = pickerContext;
     handState[idx] = normalizeTile(tile);
+    // Avanzar a la siguiente celda de la mano
+    const nextIdx = idx + 1;
+    if (nextIdx < HAND_SLOTS) {
+      pickerContext = { where: 'hand', idx: nextIdx };
+    }
   }
   renderAll();
-  pickerEl.hidden = true;
+  // NO cerrar el picker; permanece abierto para seguir añadiendo fichas
 }
 
 function normalizeTile(tile) {
@@ -180,7 +195,8 @@ function clearCurrentCell() {
   if (pickerContext.where === 'board') {
     const { r, c } = pickerContext; boardState[r][c] = null;
   } else { handState[pickerContext.idx] = null; }
-  renderAll(); pickerEl.hidden = true;
+  renderAll();
+  // NO cerrar el picker automáticamente al limpiar
 }
 
 function handleCellClick(e) {
@@ -189,9 +205,16 @@ function handleCellClick(e) {
 }
 
 function handleSolve() {
+  // Ocultar mensaje previo
+  if (msgResult) msgResult.style.display = 'none';
+  
+  const startTime = performance.now();
   const tilesBoard = boardState.flat().filter(Boolean);
   const tilesHand = handState.filter(Boolean);
-  const sol = solveOptimalWithJokers(tilesBoard, tilesHand);
+  const useHandJokers = chkUseHandJokers ? chkUseHandJokers.checked : true;
+  const timeLimit = inputTimeLimit ? Math.max(1, Number(inputTimeLimit.value) || 30) : 30;
+  
+  const sol = solveOptimalWithJokers(tilesBoard, tilesHand, useHandJokers, timeLimit);
   if (sol && sol.coversAllBoard) {
     // 1) Calcular cuántas fichas de la mano se han usado: (sets) - (fichas de mesa)
     const usedMap = computeUsedFromHandCounts(sol.sets, tilesBoard);
@@ -204,6 +227,12 @@ function handleSolve() {
     const layoutInfo = layoutSetsOnBoard(sol.sets);
     boardState = layoutInfo.board;
     renderAll();
+    // Calcular tiempo transcurrido y mostrar mensaje de éxito
+    const elapsedTime = ((performance.now() - startTime) / 1000).toFixed(3);
+    if (msgResult) {
+      msgResult.textContent = `Cálculo realizado en ${elapsedTime} segundos`;
+      msgResult.style.display = 'inline';
+    }
     return;
   }
 
@@ -238,7 +267,9 @@ function importLayout() {
 
 function clearAll() {
   boardState = Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(null));
-  handState = Array(HAND_SLOTS).fill(null); renderAll();
+  handState = Array(HAND_SLOTS).fill(null); 
+  if (msgResult) msgResult.style.display = 'none';
+  renderAll();
 }
 
 // Inicialización
@@ -769,7 +800,24 @@ function applySetToPoolAndRequiredJokers(set, poolCounts, poolJokers, requiredCo
   return { poolJokers, requiredJokers, usedFromHandNumeric, usedJokersFromBoard };
 }
 
-function generateSetsIncludingWithJokers(tile, poolCounts, poolJokers) {
+// Función heurística: dado poolCounts de fichas numéricas, retorna los números "cercanos"
+// que son candidatos razonables para sustituir comodines (±2 de cualquier número presente)
+function computeHeuristicJokerCandidates(poolCounts) {
+  const nums = new Set();
+  for (const [k, v] of poolCounts) {
+    if (v <= 0) continue;
+    const [_, numStr] = k.split('-');
+    const n = Number(numStr);
+    // Añadir n y vecinos ±2
+    for (let d = -2; d <= 2; d++) {
+      const cand = n + d;
+      if (cand >= 1 && cand <= 13) nums.add(cand);
+    }
+  }
+  return nums;
+}
+
+function generateSetsIncludingWithJokers(tile, poolCounts, poolJokers, heuristicNums = null) {
   const out = [];
   // Debe existir al menos 1 copia numérica de la ficha requerida en el pool
   const reqKey = keyOf(tile);
@@ -802,24 +850,34 @@ function generateSetsIncludingWithJokers(tile, poolCounts, poolJokers) {
       // exige que la requerida esté presente numéricamente
       if ((poolCounts.get(`${color}-${tile.num}`)||0) <= 0) continue;
       let needJ = 0; const tiles = [];
+      let validRun = true;
       for (let x=a; x<=b; x++) {
         if (x === tile.num) { tiles.push({kind:'num', color, num:x}); continue; }
         const k = `${color}-${x}`;
-        if ((poolCounts.get(k)||0) > 0) tiles.push({kind:'num', color, num:x});
-        else { tiles.push({kind:'joker'}); needJ++; }
+        if ((poolCounts.get(k)||0) > 0) {
+          tiles.push({kind:'num', color, num:x});
+        } else {
+          // Si hay heurística, solo permitir comodines en números candidatos
+          if (heuristicNums && !heuristicNums.has(x)) {
+            validRun = false; break;
+          }
+          tiles.push({kind:'joker'}); needJ++;
+        }
       }
-      if (needJ <= poolJokers) out.push({ type:'run', color, tiles, needJ });
+      if (validRun && needJ <= poolJokers) out.push({ type:'run', color, tiles, needJ });
     }
   }
 
   return dedupSetsWithJokers(out);
 }
 
-function generateSetsUsingAtLeastOneJoker(poolCounts, poolJokers) {
+function generateSetsUsingAtLeastOneJoker(poolCounts, poolJokers, heuristicNums = null) {
   const out = [];
   if (poolJokers <= 0) return out;
   // Grupos: para cada número, colores 3 o 4
   for (let n=1; n<=13; n++) {
+    // Si hay heurística, solo considerar números candidatos
+    if (heuristicNums && !heuristicNums.has(n)) continue;
     const colors = ['red','blue','black','orange'];
     for (const sz of [4,3]) {
       const colorCombos = combinations(colors, sz);
@@ -839,12 +897,20 @@ function generateSetsUsingAtLeastOneJoker(poolCounts, poolJokers) {
     for (let a=1; a<=13; a++) {
       for (let b=a+2; b<=13; b++) {
         let needJ = 0; const tiles = [];
+        let validRun = true;
         for (let x=a; x<=b; x++) {
           const k = `${color}-${x}`;
-          if ((poolCounts.get(k)||0) > 0) tiles.push({kind:'num', color, num:x});
-          else { tiles.push({kind:'joker'}); needJ++; }
+          if ((poolCounts.get(k)||0) > 0) {
+            tiles.push({kind:'num', color, num:x});
+          } else {
+            // Si hay heurística, solo permitir comodines en números candidatos
+            if (heuristicNums && !heuristicNums.has(x)) {
+              validRun = false; break;
+            }
+            tiles.push({kind:'joker'}); needJ++;
+          }
         }
-        if (needJ >= 1 && needJ <= poolJokers) out.push({ type:'run', color, tiles, needJ });
+        if (validRun && needJ >= 1 && needJ <= poolJokers) out.push({ type:'run', color, tiles, needJ });
       }
     }
   }
@@ -869,20 +935,20 @@ function dedupSetsWithJokers(sets) {
   return out;
 }
 
-function pickNextRequirement(requiredCounts, requiredJokers, poolCounts, poolJokers) {
+function pickNextRequirement(requiredCounts, requiredJokers, poolCounts, poolJokers, heuristicNums = null) {
   let best = null; let bestOptions = Infinity; let bestKind = 'num';
   // numéricos
   for (const [k,v] of requiredCounts) {
     if (v<=0) continue;
     const [color, numStr] = k.split('-'); const num = Number(numStr);
-    const opts = generateSetsIncludingWithJokers({kind:'num', color, num}, poolCounts, poolJokers)
+    const opts = generateSetsIncludingWithJokers({kind:'num', color, num}, poolCounts, poolJokers, heuristicNums)
                   .filter(s=>canTakeSetFromPoolAndJokers(s, poolCounts, poolJokers));
     if (opts.length === 0) return { kind:'num', key:k, options:[] };
     if (opts.length < bestOptions) { bestOptions = opts.length; best = { kind:'num', key:k, options: opts }; }
   }
   // comodines requeridos en mesa
   if (requiredJokers > 0) {
-    const optsJ = generateSetsUsingAtLeastOneJoker(poolCounts, poolJokers)
+    const optsJ = generateSetsUsingAtLeastOneJoker(poolCounts, poolJokers, heuristicNums)
                   .filter(s=>canTakeSetFromPoolAndJokers(s, poolCounts, poolJokers));
     if (optsJ.length === 0) return { kind:'joker', key:'joker', options:[] };
     if (!best || optsJ.length < bestOptions) { best = { kind:'joker', key:'joker', options: optsJ }; bestOptions = optsJ.length; }
@@ -890,31 +956,57 @@ function pickNextRequirement(requiredCounts, requiredJokers, poolCounts, poolJok
   return best;
 }
 
-function solveOptimalWithJokers(boardTiles, handTiles) {
+function solveOptimalWithJokers(boardTiles, handTiles, useHandJokers = true, timeLimitSec = 30) {
   const boardNums = boardTiles.filter(t=>t.kind==='num');
   const boardJ = countJokers(boardTiles);
-  const poolNums = [...boardTiles, ...handTiles].filter(t=>t.kind==='num');
-  const poolJ0 = countJokers([...boardTiles, ...handTiles]);
+  
+  // Si no queremos usar comodines de mano, filtrarlos del pool
+  const effectiveHandTiles = useHandJokers ? handTiles : handTiles.filter(t => t.kind !== 'joker');
+  
+  const poolNums = [...boardTiles, ...effectiveHandTiles].filter(t=>t.kind==='num');
+  const poolJ0 = countJokers([...boardTiles, ...effectiveHandTiles]);
 
   const required0 = countTiles(boardNums);
   let requiredJ0 = boardJ;
   const pool0 = countTiles(poolNums);
+  
+  // Decidir si usar heurística: si hay comodines Y tablero tiene >=25 fichas
+  const totalBoardCount = boardTiles.length;
+  const hasJokers = (poolJ0 > 0 || boardJ > 0);
+  const useHeuristic = hasJokers && totalBoardCount >= 25;
+  
+  // Si usamos heurística, calcular números candidatos basados en fichas de mano
+  const heuristicNums = useHeuristic ? computeHeuristicJokerCandidates(countTiles(effectiveHandTiles.filter(t=>t.kind==='num'))) : null;
+  
   let bestPlaced = -1; let bestSets = null;
+  
+  // Control de tiempo
+  const startTime = Date.now();
+  const timeLimitMs = timeLimitSec * 1000;
+  let timeoutReached = false;
 
   function backtrack(required, requiredJ, pool, poolJ, chosen, placedSoFar) {
+    // Verificar timeout cada cierto número de llamadas (cada 100 para no penalizar rendimiento)
+    if (chosen.length % 10 === 0) {
+      if (Date.now() - startTime > timeLimitMs) {
+        timeoutReached = true;
+        return;
+      }
+    }
+    
     // cota superior
     const upper = placedSoFar + sumCounts(pool) + poolJ;
     if (upper <= bestPlaced) return;
 
     let allCovered = requiredJ===0; for (const v of required.values()) if (v>0){ allCovered=false; break; }
     if (allCovered) {
-      const { sets: extraSets } = greedySetsFromPoolWithJokers(pool, poolJ);
+      const { sets: extraSets } = greedySetsFromPoolWithJokers(pool, poolJ, heuristicNums);
       const total = placedSoFar + setsTileCount(extraSets);
       if (total > bestPlaced) { bestPlaced = total; bestSets = [...chosen, ...extraSets]; }
       return;
     }
 
-    const pick = pickNextRequirement(required, requiredJ, pool, poolJ);
+    const pick = pickNextRequirement(required, requiredJ, pool, poolJ, heuristicNums);
     if (!pick || pick.options.length === 0) return;
 
     const options = pick.options.slice().sort((a,b)=>{
@@ -925,6 +1017,7 @@ function solveOptimalWithJokers(boardTiles, handTiles) {
     });
 
     for (const s of options) {
+      if (timeoutReached) return; // detener exploración si se alcanzó el límite
       const pool2 = cloneCounts(pool); let reqJ2 = requiredJ; let poolJ2 = poolJ; const req2 = cloneCounts(required);
       const res = applySetToPoolAndRequiredJokers(s, pool2, poolJ2, req2, reqJ2);
       poolJ2 = res.poolJokers; reqJ2 = res.requiredJokers;
@@ -937,7 +1030,7 @@ function solveOptimalWithJokers(boardTiles, handTiles) {
   return { coversAllBoard:true, sets: bestSets };
 }
 
-function greedySetsFromPoolWithJokers(poolIn, poolJokersIn) {
+function greedySetsFromPoolWithJokers(poolIn, poolJokersIn, heuristicNums = null) {
   const pool = cloneCounts(poolIn); let poolJ = poolJokersIn;
   const sets = [];
   let progress = true;
@@ -945,6 +1038,8 @@ function greedySetsFromPoolWithJokers(poolIn, poolJokersIn) {
     progress = false; let best = null; let bestScore = -Infinity;
     // grupos
     for (let n=1; n<=13; n++) {
+      // Si hay heurística, solo considerar números candidatos
+      if (heuristicNums && !heuristicNums.has(n)) continue;
       const colors = ['red','blue','black','orange'];
       for (const sz of [4,3]) {
         for (const comb of combinations(colors, sz)) {
@@ -964,12 +1059,20 @@ function greedySetsFromPoolWithJokers(poolIn, poolJokersIn) {
     for (const color of ['red','blue','black','orange']) {
       for (let a=1; a<=13; a++) {
         for (let b=a+2; b<=13; b++) {
-          let needJ=0; const tiles=[];
+          let needJ=0; const tiles=[]; let validRun = true;
           for (let x=a; x<=b; x++) {
             const k = `${color}-${x}`;
-            if ((pool.get(k)||0)>0) tiles.push({kind:'num', color, num:x}); else { tiles.push({kind:'joker'}); needJ++; }
+            if ((pool.get(k)||0)>0) {
+              tiles.push({kind:'num', color, num:x});
+            } else {
+              // Si hay heurística, solo permitir comodines en números candidatos
+              if (heuristicNums && !heuristicNums.has(x)) {
+                validRun = false; break;
+              }
+              tiles.push({kind:'joker'}); needJ++;
+            }
           }
-          if (needJ <= poolJ) {
+          if (validRun && needJ <= poolJ) {
             const sc = tiles.length*1000 - needJ*10 - tiles.length; // penaliza jokers y runs largas
             if (sc>bestScore) best={set:{type:'run', color, tiles, needJ}, score:sc};
           }

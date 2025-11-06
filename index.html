@@ -21,13 +21,21 @@
     </section>
 
     <section class="panel">
-      <h2>Mano</h2>
+      <h2>Mano <span id="msg-result" style="color: #d32f2f; font-weight: bold; margin-left: 12px; display: none;">Cálculo realizado</span></h2>
       <div id="hand" class="grid hand" aria-label="Mano del jugador"></div>
     </section>
 
     <section class="panel">
-      <div class="actions" style="gap:8px; flex-wrap: wrap;">
+      <div class="actions" style="gap:8px; flex-wrap: wrap; align-items: center;">
         <button id="btn-solve" class="primary">Calcular</button>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer;">
+          <input type="checkbox" id="chk-use-hand-jokers" checked />
+          <span>Usar comodines de mano</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 14px;">
+          <span>Tiempo límite (s):</span>
+          <input type="number" id="input-time-limit" min="1" max="300" value="30" style="width: 60px; padding: 4px 6px; border: 1px solid #cfd8dc; border-radius: 6px;" />
+        </label>
         <button id="btn-save-pos" class="ghost">Guardar posición</button>
         <button id="btn-load-pos" class="ghost">Cargar posición</button>
       </div>
